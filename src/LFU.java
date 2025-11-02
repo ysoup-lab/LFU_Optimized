@@ -1,68 +1,60 @@
 import java.util.HashMap;
 import java.util.Map;
-import java.util.TreeSet;
 
 class LFUCache {
-    // 缓存容量，时间戳
-    int capacity, time;
-    Map<Integer, Node> key_table;
-    TreeSet<Node> S;
+    private int capacity;
+    private Map<Integer, Node> keyToNode;
+    private Map<Integer, DoublyLinkedList> freqToDList;
+    private int minFreq;
 
     public LFUCache(int capacity) {
         this.capacity = capacity;
-        this.time = 0;
-        key_table = new HashMap<Integer, Node>();
-        S = new TreeSet<Node>();
+        keyToNode = new HashMap<>();
+        freqToDList = new HashMap<>();
+        minFreq = 0;
     }
 
     public int get(int key) {
-        if (capacity == 0) {
+        if (!keyToNode.containsKey(key)) {
             return -1;
         }
-        // 如果哈希表中没有键 key，返回 -1
-        if (!key_table.containsKey(key)) {
-            return -1;
-        }
-        // 从哈希表中得到旧的缓存
-        Node cache = key_table.get(key);
-        // 从平衡二叉树中删除旧的缓存
-        S.remove(cache);
-        // 将旧缓存更新
-        cache.cnt += 1;
-        cache.time = ++time;
-        // 将新缓存重新放入哈希表和平衡二叉树中
-        S.add(cache);
-        key_table.put(key, cache);
-        return cache.value;
+        Node node = keyToNode.get(key);
+        updateFreq(node);
+        return node.value;
     }
 
     public void put(int key, int value) {
         if (capacity == 0) {
             return;
         }
-        if (!key_table.containsKey(key)) {
-            // 如果到达缓存容量上限
-            if (key_table.size() == capacity) {
-                // 从哈希表和平衡二叉树中删除最近最少使用的缓存
-                key_table.remove(S.first().key);
-                S.remove(S.first());
-            }
-            // 创建新的缓存
-            Node cache = new Node(1, ++time, key, value);
-            // 将新缓存放入哈希表和平衡二叉树中
-            key_table.put(key, cache);
-            S.add(cache);
-        } else {
-            // 这里和 get() 函数类似
-            Node cache = key_table.get(key);
-            S.remove(cache);
-            cache.cnt += 1;
-            cache.time = ++time;
-            cache.value = value;
-            S.add(cache);
-            key_table.put(key, cache);
+        if (keyToNode.containsKey(key)) {
+            Node node = keyToNode.get(key);
+            node.value = value;
+            updateFreq(node);
+            return;
         }
+        if (keyToNode.size() >= capacity) {
+            DoublyLinkedList minFreqList = freqToDList.get(minFreq);
+            Node removedNode = minFreqList.removeLast();
+            keyToNode.remove(removedNode.key);
+        }
+        Node newNode = new Node(key, value, 1);
+        keyToNode.put(key, newNode);
+        freqToDList.computeIfAbsent(1, k -> new DoublyLinkedList()).addFirst(newNode);
+        minFreq = 1;
     }
+
+    private void updateFreq(Node node) {
+        int oldFreq = node.freq;
+        DoublyLinkedList oldList = freqToDList.get(oldFreq);
+        oldList.remove(node);
+        if (oldList.size() == 0 && oldFreq == minFreq) {
+            minFreq++;
+        }
+        node.freq++;
+        freqToDList.computeIfAbsent(node.freq, k -> new DoublyLinkedList()).addFirst(node);
+    }
+
     public static void main(String[] args) {
         // 测试用例1: 基本功能测试
         System.out.println("=== 测试用例1: 基本功能测试 ===");
@@ -114,33 +106,60 @@ class LFUCache {
     }
 }
 
-class Node implements Comparable<Node> {
-    int cnt, time, key, value;
+class Node {
+    int key;
+    int value;
+    int freq;
+    Node prev;
+    Node next;
 
-    Node(int cnt, int time, int key, int value) {
-        this.cnt = cnt;
-        this.time = time;
+    public Node(int key, int value, int freq) {
         this.key = key;
         this.value = value;
+        this.freq = freq;
+        this.prev = null;
+        this.next = null;
+    }
+}
+
+class DoublyLinkedList {
+    Node head;
+    Node tail;
+    int size;
+
+    public DoublyLinkedList() {
+        head = new Node(-1, -1, 0);
+        tail = new Node(-1, -1, 0);
+        head.next = tail;
+        tail.prev = head;
+        size = 0;
     }
 
-    public boolean equals(Object anObject) {
-        if (this == anObject) {
-            return true;
+    public void addFirst(Node node) {
+        node.next = head.next;
+        node.prev = head;
+        head.next.prev = node;
+        head.next = node;
+        size++;
+    }
+
+    public void remove(Node node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+        size--;
+    }
+
+    public Node removeLast() {
+        if (size == 0) {
+            return null;
         }
-        if (anObject instanceof Node) {
-            Node rhs = (Node) anObject;
-            return this.cnt == rhs.cnt && this.time == rhs.time;
-        }
-        return false;
+        Node last = tail.prev;
+        remove(last);
+        return last;
     }
 
-    public int compareTo(Node rhs) {
-        return cnt == rhs.cnt ? time - rhs.time : cnt - rhs.cnt;
-    }
-
-    public int hashCode() {
-        return cnt * 1000000007 + time;
+    public int size() {
+        return size;
     }
 }
 
